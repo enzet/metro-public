@@ -3,10 +3,13 @@
 # Convert SVG station layout to Shape file format.
 
 import copy
-import path
 import re
-import svg
 import sys
+
+sys.path.append('lib')
+
+import path
+import svg
 import vector
 
 from xml.dom import minidom

@@ -3,6 +3,7 @@
 # Convert SVG station layout to Shape file format.
 
 import copy
+import math
 import re
 import sys
 from xml.dom import minidom
@@ -48,25 +49,72 @@ def extract_path(element, matrix):
     return p
 
 
+def get_min(vector_1, vector_2):
+    return Vector(min(vector_1.x, vector_2.x), min(vector_1.y, vector_2.y))
+
+
+def get_max(vector_1, vector_2):
+    return Vector(max(vector_1.x, vector_2.x), max(vector_1.y, vector_2.y))
+
+
+def get_segment_length(segment):
+    return math.sqrt((segment.end.x - segment.start.x) ** 2 + \
+                     (segment.end.y - segment.start.y) ** 2)
+
+
+def get_path_length(path):
+    length = 0
+    for segment in path.segments:
+        length += get_segment_length(segment)
+    return length
+
+
+def get_segment_bounds(segment):
+    minimum = segment.start
+    maximum = segment.start
+    minimum = get_min(minimum, segment.end)
+    maximum = get_max(maximum, segment.end)
+    if segment.middle_1:
+        minimum = get_min(minimum, segment.middle_1)
+        maximum = get_max(maximum, segment.middle_1)
+    if segment.middle_2:
+        minimum = get_min(minimum, segment.middle_2)
+        maximum = get_max(maximum, segment.middle_2)
+    return minimum, maximum
+
+
+def get_path_bounds(path):
+    minimum = Vector(1000, 1000)
+    maximum = Vector(-1000, -1000)
+    for s in path.segments:
+        segment_minimum, segment_maximum = get_segment_bounds(s)
+        minimum = get_min(minimum, segment_minimum)
+        maximum = get_max(maximum, segment_maximum)
+    return minimum, maximum
+
+
+def eq(a, b):
+    return abs(a - b) < 1.0
+
+
 def get_bounds(paths):
 
     def get_for(get_component):
         min_c, p_min = 1000, None
         max_c, p_max = -1000, None
         for p in paths:
-            for s in p.segments:
-                if get_component(s.start) < min_c: 
-                    min_c, p_min = get_component(s.start), p
-                if get_component(s.start) > max_c: 
-                    max_c, p_max = get_component(s.start), p
-                if get_component(s.end) < min_c: 
-                    min_c, p_min = get_component(s.end), p
-                if get_component(s.end) > max_c: 
-                    max_c, p_max = get_component(s.end), p
+            path_minimum, path_maximum = get_path_bounds(p)
+            if get_component(path_minimum) < min_c: 
+                min_c, p_min = get_component(path_minimum), p
+            if get_component(path_maximum) > max_c: 
+                max_c, p_max = get_component(path_maximum), p
         return min_c, max_c, p_min, p_max
 
     min_x, max_x, p_min, p_max = get_for(lambda a: a.x)
-    if p_min == p_max:
+
+    ppmin, _ = get_path_bounds(p_min)
+    ppmax, _ = get_path_bounds(p_max)
+    if eq(ppmin.x, ppmax.x):
         min_y, max_y, p_min, p_max = get_for(lambda a: a.y)
 
     return p_min, p_max
@@ -117,20 +165,30 @@ def process(root, level, matrix):
             if child.localName == 'path':
                 a += 1
         if a == 10 or a == 3:
-            print 'stairs'
             paths = []
             for child in root.childNodes:
                 if child.localName == 'path':
                     paths.append(extract_path(child, matrix))
-            p_min, p_max = get_bounds(paths)
-            output.path(p_min.to_svg(), color='000000')
-            output.path(p_max.to_svg(), color='000000')
+            is_stairs = True
+            length = get_path_length(paths[0])
+            for p in paths[1:]:
+                if not eq(length, get_path_length(p)):
+                    is_stairs = False
+            if is_stairs:
+                print 'Stairs detected.'
+                p_min, p_max = get_bounds(paths)
+                bound = path.Path()
+                bound.add_segment(p_min.segments[0])
+                bound.add_point(p_max.segments[0].end)
+                bound.add_point(p_max.segments[0].start)
+                bound.add_point(p_min.segments[0].start)
+                output.path(bound.to_svg(), color='000000', width=0.2)
         else:
             for child in root.childNodes:
                 process(child, level + 1, matrix)
     elif root.localName == 'path':
         p = extract_path(root, matrix)
-        output.path(p.to_svg(), color='FF0000')
+        # output.path(p.to_svg(), color='FF0000', width=0.2)
     else:
         for child in root.childNodes:
             process(child, level + 1, matrix)

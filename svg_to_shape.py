@@ -124,6 +124,7 @@ def process(root, level, matrix):
     """
     Process SVG element.
     """
+    global ways, way_count, nodes, node_count
     if isinstance(root, minidom.Text):
         return
     # print (' ' * (level * 2)) + repr(root.localName)
@@ -177,12 +178,17 @@ def process(root, level, matrix):
             if is_stairs:
                 print 'Stairs detected.'
                 p_min, p_max = get_bounds(paths)
-                bound = path.Path()
-                bound.add_segment(p_min.segments[0])
-                bound.add_point(p_max.segments[0].end)
-                bound.add_point(p_max.segments[0].start)
-                bound.add_point(p_min.segments[0].start)
-                output.path(bound.to_svg(), color='000000', width=0.2)
+                x_1 = (p_min.segments[0].start.x + p_min.segments[0].end.x) / 2.0
+                y_1 = (p_min.segments[0].start.y + p_min.segments[0].end.y) / 2.0
+                x_2 = (p_max.segments[0].start.x + p_max.segments[0].end.x) / 2.0
+                y_2 = (p_max.segments[0].start.y + p_max.segments[0].end.y) / 2.0
+                way_count += 1
+                ways[way_count] = {'id': way_count, 'type': 'stairs',
+                                   'nodes': [node_count + 1, node_count + 2]}
+                node_count += 1
+                nodes[node_count] = {'id': node_count, 'x': x_1, 'y': y_1}
+                node_count += 1
+                nodes[node_count] = {'id': node_count, 'x': x_2, 'y': y_2}
         else:
             for child in root.childNodes:
                 process(child, level + 1, matrix)
@@ -194,10 +200,37 @@ def process(root, level, matrix):
             process(child, level + 1, matrix)
 
 
+def draw(output, nodes, ways):
+    c = '2288DD'
+    w = 0.5
+    for way_id in ways:
+        way = ways[way_id]
+        if way['type'] == 'stairs':
+            for i in range(1, len(way['nodes'])):
+                node_1 = nodes[way['nodes'][i - 1]]
+                node_2 = nodes[way['nodes'][i]]
+                output.line(node_1['x'], node_1['y'], node_2['x'], node_2['y'], width=w, color=c)
+    for node_id in nodes:
+        count = 0
+        for way_id in ways:
+            if node_id in ways[way_id]['nodes']:
+                count += 1
+        node = nodes[node_id]
+        if count != 0:
+            output.circle(node['x'], node['y'], 0.5 + 0.5 * count, width=w, color=c, fill='FFFFFF')
+
+
+# Actions
+
 output = svg.SVG(open(debug_svg_file_name, 'w+'))
 
 output.begin(1000, 1000)
 
+node_count = 0
+nodes = {}
+way_count = 0
+ways = {}
 process(inner_svg, 0, Matrix3([[1, 0, 0], [0, 1, 0], [0, 0, 1]]))
+draw(output, nodes, ways)
 
 output.end()
